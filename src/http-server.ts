@@ -1,4 +1,4 @@
-// http-server.ts
+// http-server.ts with type definitions
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
@@ -6,6 +6,17 @@ import cors from "cors";
 import { configureHaloscanServer } from "./haloscan-core.js";
 
 console.log("Server starting up...");
+
+// Define proper types for our objects
+interface ToolDefinition {
+  description?: string;
+  parameters?: any;
+  callback?: Function;
+}
+
+interface McpServerWithTools extends McpServer {
+  _registeredTools?: Record<string, ToolDefinition>;
+}
 
 // Setup Express
 const app = express();
@@ -32,11 +43,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Create an MCP server
+// Create an MCP server with our extended type
 const server = new McpServer({
   name: "Haloscan SEO",
   version: "1.0.0"
-});
+}) as McpServerWithTools;
 
 // Configure the server with Haloscan tools and prompts
 try {
@@ -45,10 +56,10 @@ try {
   console.log("Haloscan server tools configured successfully");
   
   // Log registered tools
-  if ((server as any)._registeredTools) {
-    console.log(`Server has ${Object.keys((server as any)._registeredTools).length} tools registered:`);
-    for (const [name, tool] of Object.entries((server as any)._registeredTools)) {
-      console.log(` - ${name}: ${(tool as any).description || 'No description'}`);
+  if (server._registeredTools) {
+    console.log(`Server has ${Object.keys(server._registeredTools).length} tools registered:`);
+    for (const [name, tool] of Object.entries(server._registeredTools)) {
+      console.log(` - ${name}: ${tool.description || 'No description'}`);
     }
   } else {
     console.log("No tools were registered in the server!");
@@ -58,19 +69,19 @@ try {
 }
 
 // Create transport map to track connections
-const transports: {[sessionId: string]: SSEServerTransport} = {};
+const transports: Record<string, SSEServerTransport> = {};
 
 // Capture the tools for easy access
 const getTools = () => {
-  const tools = [];
+  const tools: Array<{name: string; description: string; parameters: any}> = [];
   
   try {
-    if ((server as any)._registeredTools) {
-      for (const [name, tool] of Object.entries((server as any)._registeredTools)) {
+    if (server._registeredTools) {
+      for (const [name, tool] of Object.entries(server._registeredTools)) {
         tools.push({
           name,
-          description: (tool as any).description || '',
-          parameters: (tool as any).parameters || {}
+          description: tool.description || '',
+          parameters: tool.parameters || {}
         });
       }
     }
@@ -237,18 +248,22 @@ app.post("/messages", (req, res) => {
 
 // Test endpoint to see available tools
 app.get("/test-tools", (req, res) => {
-  const toolsInfo = {
-    serverHasTools: !!(server as any)._registeredTools,
-    toolCount: (server as any)._registeredTools ? Object.keys((server as any)._registeredTools).length : 0,
+  const toolsInfo: {
+    serverHasTools: boolean;
+    toolCount: number;
+    tools: Record<string, any>;
+  } = {
+    serverHasTools: !!server._registeredTools,
+    toolCount: server._registeredTools ? Object.keys(server._registeredTools).length : 0,
     tools: {}
   };
   
-  if ((server as any)._registeredTools) {
-    for (const [name, tool] of Object.entries((server as any)._registeredTools)) {
+  if (server._registeredTools) {
+    for (const [name, tool] of Object.entries(server._registeredTools)) {
       toolsInfo.tools[name] = {
-        description: (tool as any).description || 'No description',
-        hasParameters: !!(tool as any).parameters,
-        hasCallback: !!(tool as any).callback
+        description: tool.description || 'No description',
+        hasParameters: !!tool.parameters,
+        hasCallback: !!tool.callback
       };
     }
   }
