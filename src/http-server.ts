@@ -1,4 +1,4 @@
-// http-server.ts
+// http-server.ts - Fixed for duplicate headers issue
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
@@ -37,20 +37,17 @@ configureHaloscanServer(server);
 // Create transport map to track connections with proper typing
 const transports: Record<string, SSEServerTransport> = {};
 
-// Setup SSE endpoint
+// Setup SSE endpoint - IMPORTANT: DO NOT set headers here
 app.get("/sse", (req, res) => {
+  console.log("SSE connection attempt received");
+  
   // Set a longer timeout for the request
   req.socket.setTimeout(60000); // 60 seconds
   
-  // Set SSE-specific headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
-  });
+  // DO NOT set SSE headers here - let SSEServerTransport handle it
   
   try {
+    // Create transport first - it will set the headers
     const transport = new SSEServerTransport("/messages", res);
     transports[transport.sessionId] = transport;
     
@@ -61,6 +58,7 @@ app.get("/sse", (req, res) => {
       delete transports[transport.sessionId];
     });
     
+    // Connect to server
     server.connect(transport);
   } catch (error) {
     console.error("Error establishing SSE connection:", error);
@@ -82,31 +80,14 @@ app.post("/messages", (req, res) => {
   const transport = transports[sessionId];
   
   if (transport) {
-    // Save original end method
-    const originalEnd = res.end;
-    
-    // Override end to prevent closing the SSE connection
-    res.end = function(...args: any[]) {
-      // Send the response but don't end the actual socket
-      if (args.length > 0) {
-        res.write(args[0]);
-      }
-      return res;
-    };
-    
     // Handle the message
     try {
       transport.handlePostMessage(req, res);
     } catch (error) {
       console.error("Error handling message:", error);
-    }
-    
-    // Restore original end
-    res.end = originalEnd;
-    
-    // If headers not sent, send a response
-    if (!res.headersSent) {
-      res.status(200).json({ status: 'ok' });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Internal Server Error' });
+      }
     }
   } else {
     res.status(404).send('No transport found for sessionId');
